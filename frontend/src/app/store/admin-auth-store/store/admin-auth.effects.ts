@@ -1,9 +1,20 @@
 import { Injectable } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
-import { of } from 'rxjs';
-import { switchMap, map, catchError } from 'rxjs/operators';
+import { select, Store } from '@ngrx/store';
+import { of, timer } from 'rxjs';
+import {
+  switchMap,
+  map,
+  catchError,
+  delay,
+  delayWhen,
+  filter,
+  first,
+} from 'rxjs/operators';
 import { AdminAuthService } from 'src/app/service/admin-auth.service';
 import { login, loginFailed, loginSuccess } from './admin-auth.actions';
+import { AuthData } from './admin-auth.reducer';
+import { isAuth } from './admin-auth.selectors';
 
 @Injectable()
 export class AdminAuthEffects {
@@ -17,7 +28,7 @@ export class AdminAuthEffects {
             password: action.password,
           })
           .pipe(
-            map((loginSuccessData) => loginSuccess(loginSuccessData)),
+            map((loginSuccessData: AuthData) => loginSuccess(loginSuccessData)),
             catchError((error) =>
               of(
                 loginFailed({
@@ -29,8 +40,31 @@ export class AdminAuthEffects {
       )
     )
   );
+  refresh$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(loginSuccess),
+      delayWhen((action: AuthData) =>
+        timer(action.exp * 1000 - 60 * 1000 - Date.now())
+      ),
+      switchMap(() =>
+        this.store$.pipe(
+          select(isAuth),
+          first(),
+          filter((isAdminAuth) => isAdminAuth)
+        )
+      ),
+      switchMap(() =>
+        this.adminAuthService
+          .refresh()
+          .pipe(
+            map((loginSuccessData: AuthData) => loginSuccess(loginSuccessData))
+          )
+      )
+    )
+  );
   constructor(
     private actions$: Actions,
-    private adminAuthService: AdminAuthService
+    private adminAuthService: AdminAuthService,
+    private store$: Store
   ) {}
 }
